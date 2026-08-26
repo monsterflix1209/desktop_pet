@@ -1,0 +1,6 @@
+PySide6>=6.5.0
+requests>=2.31.0
+python-dotenv>=1.0.0
+feedparser>=6.0.10
+pywin32>=306
+pyinstaller>=6.0
