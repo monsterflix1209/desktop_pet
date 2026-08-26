@@ -16,7 +16,7 @@ from PySide6.QtGui import QAction, QDesktopServices, QFont, QColor
 from PySide6.QtWidgets import (
     QApplication, QWidget, QMainWindow, QLabel, QVBoxLayout, QHBoxLayout,
     QPushButton, QStackedWidget, QFrame, QGraphicsDropShadowEffect,
-    QSystemTrayIcon, QMenu, QComboBox, QCheckBox, QLineEdit, QMessageBox
+    QSystemTrayIcon, QMenu, QComboBox, QCheckBox, QLineEdit, QMessageBox, QStyle
 )
 
 load_dotenv()
