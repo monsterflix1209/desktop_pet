@@ -5,8 +5,8 @@ from urllib.parse import quote_plus
 import requests,feedparser
 from dotenv import load_dotenv
 from PySide6.QtCore import Qt,QTimer,QUrl,QThread,Signal
-from PySide6.QtGui import QColor,QPainter,QBrush,QPen,QPixmap,QLinearGradient
-from PySide6.QtWidgets import QApplication,QWidget,QMainWindow,QVBoxLayout,QHBoxLayout,QPushButton,QLabel,QFrame,QStackedWidget,QListWidget,QListWidgetItem,QLineEdit,QComboBox,QCheckBox,QSystemTrayIcon,QMenu,QMessageBox
+from PySide6.QtGui import QColor,QPainter,QBrush,QPen,QPixmap,QLinearGradient,QDesktopServices
+from PySide6.QtWidgets import QApplication,QWidget,QMainWindow,QVBoxLayout,QHBoxLayout,QPushButton,QLabel,QFrame,QStackedWidget,QListWidget,QListWidgetItem,QLineEdit,QComboBox,QCheckBox,QSystemTrayIcon,QMenu,QMessageBox,QGridLayout,QStyle
 load_dotenv()
 APP='Desktop Pet'; HOME=Path.home(); CFG=HOME/'.desktop_pet_config.json'; CACHE=HOME/'.desktop_pet_cache'; CACHE.mkdir(exist_ok=True)
 CWA=os.getenv('CWA_API_KEY','').strip(); MOENV=os.getenv('MOENV_API_KEY','').strip(); DEMO=os.getenv('DEMO_MODE','true').lower()=='true'
@@ -21,7 +21,7 @@ def save(c):
  except:pass
 class W(QThread):
  done=Signal(object); fail=Signal(str)
- def __init__(self,fn):super().__init__();self.fn=fn
+ def __init__(self,fn,parent=None):super().__init__(parent);self.fn=fn
  def run(self):
   try:self.done.emit(self.fn())
   except Exception as e:self.fail.emit(str(e))
@@ -40,11 +40,7 @@ class Dashboard(QMainWindow):
  def load_bg(self):
   p=CACHE/'bg.jpg'
   if p.exists():self.bg.load(str(p))
-  u=f'https://picsum.photos/seed/desktop-pet-{random.randint(1,999999)}/1800/1200';self.bg_worker=W(lambda:requests.get(u,timeout=10).content);self.work.append(self.bg_worker);self.bg_worker.done.connect(self.bg_ok);self.bg_worker.finished.connect(lambda:self._release_worker(self.bg_worker));self.bg_worker.start()
- def _release_worker(self,w):
-  try:self.work.remove(w)
-  except ValueError:pass
-  w.deleteLater()
+  u=f'https://picsum.photos/seed/desktop-pet-{random.randint(1,999999)}/1800/1200';w=W(lambda:requests.get(u,timeout=10).content,self);self.work.append(w);w.done.connect(lambda b:self.bg_ok(b));w.start()
  def bg_ok(self,b):
   try:
    if len(b)>1000:(CACHE/'bg.jpg').write_bytes(b);self.bg.loadFromData(b);self.update()
@@ -69,7 +65,7 @@ class Dashboard(QMainWindow):
   w=QWidget();o=self.head(title,sub);w.setLayout(o);body=QVBoxLayout();w.layout().addLayout(body);self.stack.addWidget(w);return w,body
  def weather(self):
   w,b=self.page('Weather','Central Weather Administration + AQI');r=QHBoxLayout();c=Glass(38);l=QVBoxLayout(c);self.temp=QLabel('--°C');self.temp.setStyleSheet('color:white;font-size:68px;font-weight:900');self.wx=QLabel('Loading…');self.wx.setStyleSheet('color:white;font-size:24px;font-weight:800');self.wdet=QLabel('Humidity --\nWind --\nRain --');self.wdet.setStyleSheet('color:rgba(255,255,255,190);font-size:15px');l.addWidget(QLabel(self.cfg.get('city','臺中市')));l.addWidget(self.temp);l.addWidget(self.wx);l.addWidget(self.wdet);r.addWidget(c,3);a=Glass(34);al=QVBoxLayout(a);self.aqi=QLabel('--');self.aqi.setStyleSheet('color:white;font-size:64px;font-weight:900');self.aqis=QLabel('AQI · --');self.aqis.setStyleSheet('color:white;font-size:18px;font-weight:800');self.pm=QLabel('PM2.5 --');self.pm.setStyleSheet('color:rgba(255,255,255,190)');al.addWidget(QLabel('AIR QUALITY'));al.addWidget(self.aqi);al.addWidget(self.aqis);al.addWidget(self.pm);r.addWidget(a,2);b.addLayout(r);n=QLabel('Demo mode is ON. Add CWA_API_KEY / MOENV_API_KEY for live data.');n.setStyleSheet('color:rgba(255,255,255,160);font-size:11px');b.addWidget(n)
-  self.weather_worker=W(self.get_weather);self.work.append(self.weather_worker);self.weather_worker.done.connect(self.set_weather);self.weather_worker.finished.connect(lambda:self._release_worker(self.weather_worker));self.weather_worker.start()
+  self.w=W(self.get_weather,self);self.work.append(self.w);self.w.done.connect(self.set_weather);self.w.start()
  def get_weather(self):
   if self.cfg.get('demo',True) or not CWA:return {'t':29,'h':72,'wind':2.1,'wx':'多雲時晴','rain':20}
   j=requests.get('https://opendata.cwa.gov.tw/api/v1/rest/datastore/O-A0003-001',headers={'Authorization':CWA},params={'format':'JSON'},timeout=10).json();ss=j.get('records',{}).get('Station',[]);s=next((x for x in ss if x.get('CountyName')==self.cfg.get('city')),ss[0]);e=s.get('WeatherElement',{});return {'t':e.get('AirTemperature','--'),'h':e.get('RelativeHumidity','--'),'wind':e.get('WindSpeed','--'),'wx':s.get('Weather','--'),'rain':'--'}
@@ -79,12 +75,10 @@ class Dashboard(QMainWindow):
   for n,u in RSS.items():x=Btn(n);x.clicked.connect(lambda _,u=u:self.load_news(u));nav.addWidget(x)
   b.addLayout(nav);b.addWidget(self.nl);self.load_news(RSS['🔥 熱門'])
  def load_news(self,u):
-  self.nl.clear();self.nl.addItem('Loading…');self.news_worker=W(lambda:feedparser.parse(u));self.work.append(self.news_worker);self.news_worker.done.connect(self.news_ok);self.news_worker.finished.connect(lambda:self._release_worker(self.news_worker));self.news_worker.start()
+  self.nl.clear();self.nl.addItem('Loading…');w=W(lambda:feedparser.parse(u),self);self.work.append(w);w.done.connect(self.news_ok);w.start()
  def news_ok(self,f):
   self.nl.clear()
   for e in f.entries[:18]:i=QListWidgetItem('  '+e.get('title','Untitled'));i.setData(Qt.UserRole,e.get('link','https://news.google.com/'));self.nl.addItem(i)
-  try:self.nl.itemDoubleClicked.disconnect()
-  except:pass
   self.nl.itemDoubleClicked.connect(lambda i:QDesktopServices.openUrl(QUrl(i.data(Qt.UserRole))))
  def market(self):
   w,b=self.page('Market','Quick watchlist · 1D data');top=QHBoxLayout();self.q=QLineEdit();self.q.setPlaceholderText('Search 0050 / 2330 / AAPL');self.q.setStyleSheet('QLineEdit{background:rgba(255,255,255,42%);color:white;border:1px solid rgba(255,255,255,50%);border-radius:18px;padding:14px}');x=Btn('SEARCH');x.clicked.connect(self.search_market);top.addWidget(self.q);top.addWidget(x);b.addLayout(top);self.ml=QListWidget();self.ml.setStyleSheet('QListWidget{background:transparent;border:none}QListWidget::item{background:rgba(255,255,255,38%);color:white;padding:15px;margin:5px;border-radius:16px}');b.addWidget(self.ml);self.mv=QLabel('Select a market');self.mv.setStyleSheet('color:white;font-size:40px;font-weight:900');b.addWidget(self.mv);self.fill_markets()
@@ -95,7 +89,7 @@ class Dashboard(QMainWindow):
  def search_market(self):
   q=self.q.text().strip().upper();self.market_load(q if not q.isdigit() else q+'.TW')
  def market_load(self,s):
-  self.mv.setText('Loading…');self.market_worker=W(lambda:self.market_fetch(s));self.work.append(self.market_worker);self.market_worker.done.connect(lambda t:self.mv.setText(t));self.market_worker.finished.connect(lambda:self._release_worker(self.market_worker));self.market_worker.start()
+  self.mv.setText('Loading…');w=W(lambda:self.market_fetch(s),self);self.work.append(w);w.done.connect(lambda t:self.mv.setText(t));w.start()
  def market_fetch(self,s):
   try:
    j=requests.get('https://query1.finance.yahoo.com/v8/finance/chart/'+s,params={'range':'1d','interval':'5m'},timeout=10).json();m=j['chart']['result'][0]['meta'];p=m.get('regularMarketPrice');pc=m.get('previousClose');return f'{s}   {p if p is not None else "--"}   {"" if p is None or pc is None else f"({p-pc:+.2f})"}'
@@ -114,7 +108,7 @@ class Dashboard(QMainWindow):
   if i!=self.seq[p]:self.info.setText('Miss! Try again.');self.seq=[]
   elif len(self.inp)==len(self.seq):self.info.setText('Perfect! ✦');self.seq=[]
  def settings(self):
-  w,b=self.page('Settings','Personalize the Fantasy Glass');c=Glass(36);l=QVBoxLayout(c);l.addWidget(QLabel('Theme'));self.theme=QComboBox();self.theme.addItems(['Monochrome','Blue','Purple','Green','Orange']);self.theme.setCurrentText(self.cfg.get('theme','Monochrome'));l.addWidget(self.theme);l.addWidget(QLabel('City'));self.city=QComboBox();self.city.addItems(['臺中市','臺北市','新北市','桃園市','臺南市','高雄市']);self.city.setCurrentText(self.cfg.get('city','臺中市'));l.addWidget(self.city);self.demo=QCheckBox('Demo mode (offline-friendly)');self.demo.setChecked(self.cfg.get('demo',True));l.addWidget(self.demo);saveb=Btn('SAVE SETTINGS');saveb.clicked.connect(self.save_settings);l.addWidget(saveb);l.addStretch();b.addWidget(c)
+  w,b=self.page('Settings','Personalize the Fantasy Glass');c=Glass(36);l=QVBoxLayout(c);l.addWidget(QLabel('Theme'));self.theme=QComboBox();self.theme.addItems(['Monochrome','Blue','Purple','Green','Orange']);self.theme.setCurrentText(self.cfg.get('theme','Monochrome'));l.addWidget(self.theme);l.addWidget(QLabel('City'));self.city=QComboBox();self.city.addItems(['臺中市','臺北市','新北市','桃園市','臺南市','高雄市']);self.city.setCurrentText(self.cfg.get('city','臺中市'));l.addWidget(self.city);self.demo=QCheckBox('Demo mode (offline-friendly)');self.demo.setChecked(self.cfg.get('demo',True));l.addWidget(self.demo);x=Btn('SAVE SETTINGS');x.clicked.connect(self.save_settings);l.addWidget(x);b.addWidget(c)
  def save_settings(self):
   self.cfg['theme']=self.theme.currentText();self.cfg['city']=self.city.currentText();self.cfg['demo']=self.demo.isChecked();save(self.cfg);QMessageBox.information(self,'Desktop Pet','Settings saved.')
 class Pet(QWidget):
