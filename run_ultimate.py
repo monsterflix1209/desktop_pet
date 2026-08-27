@@ -1,28 +1,51 @@
-import os
 import sys
+import traceback
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QStyle
 
-# Prevent NewsPage from starting an RSS worker twice during Dashboard construction.
-# The original NewsPage.__init__ auto-loads the feed, and Dashboard.refresh_all()
-# immediately loaded it again, replacing a still-running QThread.
 import desktop_pet_ultimate as ultimate
 
+# Keep every active RSS worker referenced until it finishes. The previous
+# implementation suppressed the first load during NewsPage construction,
+# but could still replace a running worker when changing categories quickly.
+def _safe_load_feed(self, url, name):
+    if not hasattr(self, "_rss_workers"):
+        self._rss_workers = []
+
+    worker = ultimate.RSSWorker(url, self.demo)
+    self._rss_workers.append(worker)
+
+    def cleanup():
+        try:
+            self._rss_workers.remove(worker)
+        except ValueError:
+            pass
+        worker.deleteLater()
+
+    worker.done.connect(lambda items: self.populate(items, name))
+    worker.failed.connect(lambda error: self.show_error(str(error)))
+    worker.finished.connect(cleanup)
+    worker.start()
+
+
+# Suppress the automatic NewsPage load during __init__; Dashboard.refresh_all()
+# is responsible for the first real load.
 _original_news_init = ultimate.NewsPage.__init__
 _original_load_feed = ultimate.NewsPage.load_feed
 
 
 def _news_init_without_duplicate_load(self, demo=False):
-    original_loader = ultimate.NewsPage.load_feed
     ultimate.NewsPage.load_feed = lambda *args, **kwargs: None
     try:
         _original_news_init(self, demo)
     finally:
-        ultimate.NewsPage.load_feed = original_loader
+        ultimate.NewsPage.load_feed = _safe_load_feed
 
 
+ultimate.NewsPage.load_feed = _safe_load_feed
 ultimate.NewsPage.__init__ = _news_init_without_duplicate_load
 
-from desktop_pet_ultimate import load_config, Pet
+load_config = ultimate.load_config
+Pet = ultimate.Pet
 
 
 def main():
@@ -32,8 +55,10 @@ def main():
     pet = Pet(config)
     pet.show()
 
-    # Keep a strong Python reference so the tray icon cannot be garbage-collected.
-    tray = QSystemTrayIcon(app.style().standardIcon(QStyle.SP_ComputerIcon), pet)
+    tray = QSystemTrayIcon(
+        app.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon),
+        pet,
+    )
     menu = QMenu()
     menu.addAction("🖥️ 開啟資訊", pet.open_dashboard)
     menu.addAction("❌ 結束", app.quit)
@@ -44,4 +69,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception:
+        traceback.print_exc()
+        raise
