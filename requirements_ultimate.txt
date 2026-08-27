@@ -1,4 +1,5 @@
 PySide6>=6.5.0
+PySide6-Addons>=6.5.0
 requests>=2.31.0
 python-dotenv>=1.0.0
 feedparser>=6.0.10
